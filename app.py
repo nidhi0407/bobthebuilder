@@ -120,7 +120,7 @@ def load_models():
     gru_model = None
     if CHECKPOINT_PATH.exists():
         try:
-            ckpt = torch.load(CHECKPOINT_PATH, map_location=device)
+            ckpt = torch.load(CHECKPOINT_PATH, map_location=device, weights_only=False)
             cfg = ckpt.get("config", TrajectoryConfig())
             gru_model = TrajectoryGRU(cfg).to(device)
             gru_model.load_state_dict(ckpt["model_state_dict"])
@@ -134,7 +134,7 @@ def load_models():
         gru_model.eval()
 
     # 3. Risk Engine
-    risk_engine = RiskEngine(RiskConfig(cpa_threshold=0.08, ttc_threshold=3.5, high_risk_threshold=0.60))
+    risk_engine = RiskEngine(RiskConfig(safe_distance=0.06, fps=30.0, risk_threshold=0.60))
 
     # 4. Counterfactual Simulator
     cf_simulator = CounterfactualSimulator(risk_engine=risk_engine)
@@ -269,12 +269,11 @@ def process_pipeline_frame(
             for idx, tid in enumerate(valid_tids):
                 predictions[tid] = preds_np[idx]  # Shape: (12, 2)
 
-    # 3. Stage 5: Risk Engine CPA / TTC Calculations & Stage 6a Counterfactuals
+    # 3. Stage 5: Risk Engine & Stage 6a Counterfactuals
     danger_recommendations: List[InterventionRecommendation] = []
-    max_risk = 0.0
 
     if predictions and len(predictions) >= 2:
-        danger_recommendations = cf_simulator.evaluate_all_pairs(
+        danger_recommendations = cf_simulator.evaluate_dangerous_pairs(
             predictions=predictions,
             class_map=class_map,
         )
@@ -313,9 +312,6 @@ def process_pipeline_frame(
     if danger_recommendations:
         ts = format_timestamp(frame_idx, fps)
         for rec in danger_recommendations:
-            if rec.baseline_risk_score > max_risk:
-                max_risk = rec.baseline_risk_score
-
             w_tid, m_tid = rec.worker_id, rec.machine_id
             if w_tid in active_tracks and m_tid in active_tracks:
                 w_pos = active_tracks[w_tid][1]
@@ -329,8 +325,8 @@ def process_pipeline_frame(
                 mid_px = ((wp_px[0] + mp_px[0]) // 2, (wp_px[1] + mp_px[1]) // 2)
                 cv2.putText(
                     annotated,
-                    f"🚨 RISK {rec.baseline_risk_score:.2f}",
-                    (mid_px[0] - 50, mid_px[1] - 10),
+                    f"🚨 RISK ({rec.status})",
+                    (mid_px[0] - 60, mid_px[1] - 10),
                     cv2.FONT_HERSHEY_SIMPLEX,
                     0.6,
                     COLOR_HAZARD,
@@ -338,22 +334,26 @@ def process_pipeline_frame(
                     cv2.LINE_AA,
                 )
 
-                # Draw Counterfactual Safe Trajectory
-                if rec.best_candidate is not None:
-                    safe_pts = [(int(pt[0] * w), int(pt[1] * h)) for pt in rec.best_candidate.modified_machine_traj]
+                # Draw modified safe trajectory for vehicle
+                if m_tid in predictions and rec.speed_factor < 1.0:
+                    orig_mach_traj = predictions[m_tid]
+                    origin = orig_mach_traj[0].copy()
+                    sim_mach_traj = origin + (orig_mach_traj - origin) * rec.speed_factor
+                    safe_pts = [(int(pt[0] * w), int(pt[1] * h)) for pt in sim_mach_traj]
                     for si in range(len(safe_pts) - 1):
                         cv2.line(annotated, safe_pts[si], safe_pts[si + 1], COLOR_SAFE_PLAN, 2, cv2.LINE_AA)
 
-                top_hud_message = f"PRESCRIPTIVE ACTION: {rec.best_candidate.description.upper()}"
+                top_hud_message = f"PRESCRIPTIVE ACTION: {rec.recommended_action.upper()} (DEADLINE: {rec.deadline_seconds:.1f}s)"
                 new_logs.append(
-                    f"[{ts}] 🚨 HAZARD: Worker #{w_tid} ↔ Machine #{m_tid} (Risk: {rec.baseline_risk_score:.2f}) "
-                    f"→ Prescribed: {rec.best_candidate.description}"
+                    f"[{ts}] 🚨 HAZARD: Worker #{w_tid} ↔ Machine #{m_tid} "
+                    f"→ Prescribed: {rec.recommended_action} within {rec.deadline_seconds:.1f}s "
+                    f"(safe distance: {rec.projected_safe_distance:.4f})"
                 )
 
                 # Dispatch live audio & HUD triggers
                 alert_dispatcher.trigger_async(
-                    worker_msg=rec.worker_instruction,
-                    forklift_msg=rec.machine_instruction,
+                    worker_msg=f"Warning Worker #{w_tid}! Machine #{m_tid} approaching within {rec.deadline_seconds:.1f} seconds!",
+                    forklift_msg=f"Emergency Alert: {rec.recommended_action} within {rec.deadline_seconds:.1f} seconds!",
                 )
     else:
         alert_dispatcher.clear_async()
@@ -366,7 +366,7 @@ def process_pipeline_frame(
             top_hud_message,
             (20, 28),
             cv2.FONT_HERSHEY_SIMPLEX,
-            0.65,
+            0.60,
             (255, 255, 255),
             2,
             cv2.LINE_AA,
