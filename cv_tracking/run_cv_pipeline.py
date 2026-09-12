@@ -279,7 +279,7 @@ def main():
     parser.add_argument("--video", type=str, default=None, help="Path to input video file or RTSP stream")
     parser.add_argument("--model", type=str, default="yolov8n.pt", help="Path to YOLO model weights (.pt or .onnx)")
     parser.add_argument("--conf", type=float, default=0.35, help="Detection confidence threshold")
-    parser.add_argument("--history-len", type=int, default=12, help="Trajectory history buffer length")
+    parser.add_argument("--history-len", type=int, default=8, help="Trajectory history buffer length (must match GRU model's obs_len=8)")
     parser.add_argument("--output-dir", type=str, default="output", help="Directory to save exported results")
     parser.add_argument("--save-video", action="store_true", help="Save annotated output video")
     parser.add_argument("--headless", action="store_true", default=True, help="Run without UI window")

@@ -43,7 +43,7 @@ class TrackingConfig:
     track_buffer: int = 30  # Frame buffer inside tracker
 
     # Trajectory Buffer & Timeouts
-    history_length: int = 12       # Last N observations handed to Person 2 (default 12)
+    history_length: int = 8        # Last N observations handed to Person 2 (must match GRU model's obs_len=8)
     track_expiry_seconds: float = 1.5  # Grace period before dropping temporarily lost track
 
     # Position Extraction
