@@ -674,3 +674,28 @@ ForeSite aims to shift the focus toward **anticipation**.
 ## 📌 One-Line Description
 
 **ForeSite AI is a predictive construction-safety system that forecasts worker–machinery collisions and recommends interventions before accidents happen.**
+
+---
+
+# 💻 Perception & Tracking Pipeline (Person 1)
+
+ForeSite AI's real-time perception and tracking layer is located in [`cv_tracking/`](cv_tracking/):
+
+- **Video Ingestion:** `cv_tracking/video_reader.py` (OpenCV with timestamping)
+- **Object Detection:** `cv_tracking/detector.py` (YOLO via ONNX Runtime & Ultralytics)
+- **Multi-Object Tracking:** `cv_tracking/tracker.py` (ByteTrack 2-stage association)
+- **Position Normalization:** `cv_tracking/position.py` (Bottom-center ground contact `[x_norm, y_norm]`)
+- **Trajectory Buffering:** `cv_tracking/trajectory_buffer.py` (Recent observations + grace period)
+- **Visualization & Export:** `cv_tracking/visualize.py`, `cv_tracking/exporter.py`
+
+### Quickstart
+```bash
+# Run pipeline on demo construction clip:
+python -m cv_tracking.run_cv_pipeline --generate-demo --save-video
+
+# Run full test suite:
+pytest tests/ -v
+```
+
+See [`cv_tracking/README.md`](cv_tracking/README.md) for complete interface specifications, schemas, and downstream teammate handoffs.
+

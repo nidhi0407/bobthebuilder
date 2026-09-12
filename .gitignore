@@ -1,0 +1,39 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Virtual environments
+.venv/
+venv/
+env/
+ENV/
+
+# Testing caches
+.pytest_cache/
+.coverage
+htmlcov/
+
+# OS specific
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Large generated media files (keep code and json/csv light)
+*.mp4
+*.mov
+*.avi
+*.mkv
+output/annotated_feed.mp4
+output/frame_*.jpg
+data/demo_site.mp4
+
+# Assignment PDFs
+*.pdf
+
+# Logs
+*.log
