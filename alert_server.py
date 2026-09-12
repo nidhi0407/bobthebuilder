@@ -156,6 +156,7 @@ def get_status():
 
 
 @app.route("/trigger", methods=["POST"])
+@app.route("/api/alert", methods=["POST"])
 def trigger_alert():
     """
     Triggers an active alert.
@@ -186,6 +187,7 @@ def trigger_alert():
 
 
 @app.route("/clear", methods=["POST"])
+@app.route("/api/clear", methods=["POST"])
 def clear_alert():
     """Resets the alert state to All Clear."""
     logger.info("🟢 ALERT CLEARED -> ALL CLEAR")
