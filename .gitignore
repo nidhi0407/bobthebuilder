@@ -40,3 +40,5 @@ data/demo_site.mp4
 
 # Logs
 *.log
+
+.env
