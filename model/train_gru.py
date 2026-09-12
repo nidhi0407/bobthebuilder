@@ -2,6 +2,7 @@
 Training script for ForeSite AI GRU Trajectory Model.
 
 Configuration:
+- 100% Real Video Tracking Data (output/trajectories.csv & output/frame_tracks.json)
 - 65% Train / 35% Validation split
 - 45 Epochs
 - Seed: 42 (applied across PyTorch, NumPy, Python random)
@@ -13,7 +14,7 @@ import json
 import random
 import time
 from pathlib import Path
-from typing import Tuple, List, Dict, Any
+from typing import Tuple, List, Dict, Any, Optional
 
 import numpy as np
 import pandas as pd
@@ -21,7 +22,10 @@ import torch
 import torch.nn as nn
 from torch.utils.data import Dataset, DataLoader, random_split
 
-from trajectory_model import TrajectoryConfig, TrajectoryGRU
+try:
+    from .trajectory_model import TrajectoryConfig, TrajectoryGRU
+except ImportError:
+    from trajectory_model import TrajectoryConfig, TrajectoryGRU
 
 
 def set_seed(seed: int = 42):
@@ -35,36 +39,36 @@ def set_seed(seed: int = 42):
         torch.backends.cudnn.benchmark = False
 
 
-class TrajectoryDataset(Dataset):
+class RealTrajectoryDataset(Dataset):
     """
-    Dataset combining real site CCTV tracks from output/trajectories.csv
-    with calibrated construction site agent kinematics (workers vs machinery).
+    Trajectory Dataset strictly built from real CCTV video tracking data.
+    Extracts continuous (obs_len -> pred_len) sliding windows from tracked entities.
     """
     def __init__(
         self,
         obs_len: int = 8,
         pred_len: int = 12,
         csv_path: Optional[str] = None,
-        num_synthetic_samples: int = 4000,
-        seed: int = 42,
+        json_path: Optional[str] = None,
+        stride: int = 1,
     ):
         super().__init__()
         self.obs_len = obs_len
         self.pred_len = pred_len
         self.total_len = obs_len + pred_len
-        self.seed = seed
+        self.stride = stride
 
         self.samples_obs: List[torch.Tensor] = []
         self.samples_target: List[torch.Tensor] = []
         self.samples_class: List[int] = []
 
-        # 1. Load real trajectory tracks if present
+        # 1. Load real trajectory tracks from CSV
         if csv_path and os.path.exists(csv_path):
             self._load_from_csv(csv_path)
 
-        # 2. Augment with domain-calibrated construction kinematic trajectories
-        if num_synthetic_samples > 0:
-            self._generate_kinematics(num_synthetic_samples)
+        # 2. Load additional real trajectory tracks from frame_tracks.json if available
+        if json_path and os.path.exists(json_path) and len(self.samples_obs) == 0:
+            self._load_from_frame_json(json_path)
 
     def _load_from_csv(self, csv_path: str):
         try:
@@ -74,51 +78,51 @@ class TrajectoryDataset(Dataset):
                 group = group.sort_values("timestamp")
                 coords = group[["x", "y"]].values
                 class_str = group["class_name"].iloc[0] if "class_name" in group.columns else "worker"
-                cls_id = 0 if "worker" in class_str.lower() else 1
+                cls_id = 0 if "worker" in class_str.lower() else (1 if "forklift" in class_str.lower() else (2 if "excavator" in class_str.lower() else 3))
 
                 # Extract sliding windows of length total_len
                 if len(coords) >= self.total_len:
-                    for start_idx in range(0, len(coords) - self.total_len + 1, 2):
+                    for start_idx in range(0, len(coords) - self.total_len + 1, self.stride):
                         window = coords[start_idx : start_idx + self.total_len]
                         obs = torch.tensor(window[: self.obs_len], dtype=torch.float32)
                         target = torch.tensor(window[self.obs_len :], dtype=torch.float32)
                         self.samples_obs.append(obs)
                         self.samples_target.append(target)
                         self.samples_class.append(cls_id)
+            print(f"[Dataset] Loaded {len(self.samples_obs)} real tracklet samples from {csv_path}")
         except Exception as e:
             print(f"[Warning] Failed to load real trajectories from CSV: {e}")
 
-    def _generate_kinematics(self, count: int):
-        rng = np.random.RandomState(self.seed)
-        for _ in range(count):
-            cls_id = rng.choice([0, 1, 2, 3])  # 0: worker, 1: forklift, 2: excavator, 3: truck
+    def _load_from_frame_json(self, json_path: str):
+        try:
+            with open(json_path, "r") as f:
+                data = json.load(f)
 
-            start_x = rng.uniform(0.1, 0.9)
-            start_y = rng.uniform(0.1, 0.9)
+            tracks_by_id: Dict[int, List[Dict[str, Any]]] = {}
+            for frame in data:
+                for t in frame.get("tracks", []):
+                    tid = t["track_id"]
+                    if tid not in tracks_by_id:
+                        tracks_by_id[tid] = []
+                    tracks_by_id[tid].append(t)
 
-            if cls_id == 0:  # Worker: slower, higher agility / turning variance
-                speed = rng.uniform(0.003, 0.008)
-                turn_noise = 0.12
-            else:            # Machinery: faster, constrained momentum
-                speed = rng.uniform(0.008, 0.025)
-                turn_noise = 0.05
+            for tid, t_list in tracks_by_id.items():
+                t_list.sort(key=lambda x: x["timestamp"])
+                coords = np.array([t["position"] for t in t_list], dtype=np.float32)
+                class_str = t_list[0].get("class_name", "worker")
+                cls_id = 0 if "worker" in class_str.lower() else 1
 
-            heading = rng.uniform(0, 2 * np.pi)
-            seq = []
-            cx, cy = start_x, start_y
-            chead = heading
-
-            for _ in range(self.total_len):
-                seq.append([cx, cy])
-                chead += rng.normal(0, turn_noise)
-                step_speed = speed * (1.0 + rng.normal(0, 0.03))
-                cx += step_speed * np.cos(chead)
-                cy += step_speed * np.sin(chead)
-
-            seq_tensor = torch.tensor(seq, dtype=torch.float32)
-            self.samples_obs.append(seq_tensor[: self.obs_len])
-            self.samples_target.append(seq_tensor[self.obs_len :])
-            self.samples_class.append(cls_id)
+                if len(coords) >= self.total_len:
+                    for start_idx in range(0, len(coords) - self.total_len + 1, self.stride):
+                        window = coords[start_idx : start_idx + self.total_len]
+                        obs = torch.tensor(window[: self.obs_len], dtype=torch.float32)
+                        target = torch.tensor(window[self.obs_len :], dtype=torch.float32)
+                        self.samples_obs.append(obs)
+                        self.samples_target.append(target)
+                        self.samples_class.append(cls_id)
+            print(f"[Dataset] Loaded {len(self.samples_obs)} real tracklet samples from {json_path}")
+        except Exception as e:
+            print(f"[Warning] Failed to load real trajectories from JSON: {e}")
 
     def __len__(self) -> int:
         return len(self.samples_obs)
@@ -145,17 +149,21 @@ def train():
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"[*] Training on device: {device} | Seed: {cfg.seed}")
 
-    # 1. Dataset setup
+    # 1. Dataset setup strictly with real video tracking data
     model_dir = Path(__file__).parent
     real_csv = model_dir.parent / "output" / "trajectories.csv"
+    real_json = model_dir.parent / "output" / "frame_tracks.json"
 
-    dataset = TrajectoryDataset(
+    dataset = RealTrajectoryDataset(
         obs_len=cfg.obs_len,
         pred_len=cfg.pred_len,
         csv_path=str(real_csv) if real_csv.exists() else None,
-        num_synthetic_samples=5000,
-        seed=cfg.seed,
+        json_path=str(real_json) if real_json.exists() else None,
+        stride=1,
     )
+
+    if len(dataset) == 0:
+        raise RuntimeError(f"No real trajectory tracks found in {real_csv} or {real_json}.")
 
     # 2. 65% Train / 35% Validation Split
     total_size = len(dataset)
@@ -165,10 +173,10 @@ def train():
     generator = torch.Generator().manual_seed(cfg.seed)
     train_ds, val_ds = random_split(dataset, [train_size, val_size], generator=generator)
 
-    print(f"[*] Total Samples: {total_size} | Train (65%): {len(train_ds)} | Val (35%): {len(val_ds)}")
+    print(f"[*] Total Real Tracking Samples: {total_size} | Train (65%): {len(train_ds)} | Val (35%): {len(val_ds)}")
 
-    train_loader = DataLoader(train_ds, batch_size=cfg.batch_size, shuffle=True, generator=generator)
-    val_loader = DataLoader(val_ds, batch_size=cfg.batch_size, shuffle=False)
+    train_loader = DataLoader(train_ds, batch_size=min(cfg.batch_size, len(train_ds)), shuffle=True, generator=generator)
+    val_loader = DataLoader(val_ds, batch_size=min(cfg.batch_size, len(val_ds)), shuffle=False)
 
     # 3. Model, Loss, Optimizer, Scheduler
     model = TrajectoryGRU(cfg).to(device)
@@ -181,6 +189,10 @@ def train():
     best_weights_path = checkpoints_dir / "gru_trajectory_best.pt"
 
     history = {
+        "dataset_source": "real_cctv_video_tracks",
+        "total_samples": total_size,
+        "train_samples": len(train_ds),
+        "val_samples": len(val_ds),
         "train_loss": [],
         "val_loss": [],
         "val_ade": [],
@@ -193,7 +205,7 @@ def train():
     best_val_ade = float("inf")
     start_time = time.time()
 
-    print(f"[*] Launching training for {cfg.epochs} epochs...")
+    print(f"[*] Launching training for {cfg.epochs} epochs on 100% real tracking data...")
     print("-" * 75)
 
     for epoch in range(1, cfg.epochs + 1):
@@ -275,3 +287,4 @@ def train():
 
 if __name__ == "__main__":
     train()
+
