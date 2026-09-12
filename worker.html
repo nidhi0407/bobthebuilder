@@ -1,0 +1,498 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Worker Safety Monitor - ForeSite</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;900&family=JetBrains+Mono:wght@700&display=swap" rel="stylesheet">
+    <style>
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+            -webkit-tap-highlight-color: transparent;
+        }
+
+        html, body {
+            width: 100%;
+            height: 100%;
+            height: 100dvh;
+            overflow: hidden;
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            transition: background-color 0.3s ease, border-color 0.3s ease;
+        }
+
+        /* Calm / All Clear Mode */
+        body.state-safe {
+            background: radial-gradient(circle at 50% 30%, #10b981 0%, #047857 70%, #064e3b 100%);
+            color: #ffffff;
+            border: 12px solid #34d399;
+        }
+
+        /* Emergency Alert Mode */
+        body.state-alert {
+            background: radial-gradient(circle at 50% 30%, #ef4444 0%, #dc2626 60%, #7f1d1d 100%);
+            color: #ffffff;
+            border: 16px solid #fbbf24;
+            animation: pulse-hazard 0.9s infinite ease-in-out;
+        }
+
+        @keyframes pulse-hazard {
+            0%, 100% {
+                border-color: #fbbf24;
+                box-shadow: inset 0 0 50px rgba(0, 0, 0, 0.7), 0 0 60px rgba(239, 68, 68, 0.9);
+            }
+            50% {
+                border-color: #ffffff;
+                box-shadow: inset 0 0 90px rgba(254, 240, 138, 0.6), 0 0 90px rgba(239, 68, 68, 1);
+            }
+        }
+
+        #app-container {
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+            align-items: center;
+            height: 100%;
+            padding: 20px 18px 24px 18px;
+            text-align: center;
+            position: relative;
+            z-index: 10;
+        }
+
+        /* Top Bar */
+        .top-bar {
+            width: 100%;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            font-size: 0.9rem;
+            font-weight: 700;
+            letter-spacing: 0.08em;
+            text-transform: uppercase;
+        }
+
+        .role-pill {
+            background: rgba(0, 0, 0, 0.35);
+            backdrop-filter: blur(8px);
+            padding: 8px 16px;
+            border-radius: 9999px;
+            border: 2px solid rgba(255, 255, 255, 0.4);
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .test-audio-btn {
+            background: rgba(255, 255, 255, 0.25);
+            border: 1px solid rgba(255, 255, 255, 0.6);
+            color: white;
+            padding: 8px 14px;
+            border-radius: 9999px;
+            font-size: 0.8rem;
+            font-weight: 800;
+            cursor: pointer;
+        }
+
+        /* Center Content Area */
+        .main-content {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            flex: 1;
+            width: 100%;
+            max-width: 650px;
+            margin: auto 0;
+        }
+
+        .state-icon {
+            font-size: clamp(64px, 15vw, 120px);
+            margin-bottom: 12px;
+            filter: drop-shadow(0 6px 16px rgba(0, 0, 0, 0.4));
+        }
+
+        .state-title {
+            font-size: clamp(36px, 9.5vw, 70px);
+            font-weight: 900;
+            letter-spacing: -0.02em;
+            line-height: 1.05;
+            text-transform: uppercase;
+            text-shadow: 0 4px 16px rgba(0, 0, 0, 0.5);
+            margin-bottom: 12px;
+        }
+
+        /* Message Display Card */
+        .message-card {
+            margin-top: 14px;
+            width: 100%;
+            padding: 22px 18px;
+            border-radius: 20px;
+            background: rgba(0, 0, 0, 0.45);
+            backdrop-filter: blur(12px);
+            border: 3px solid rgba(255, 255, 255, 0.35);
+            box-shadow: 0 16px 36px rgba(0, 0, 0, 0.4);
+        }
+
+        body.state-alert .message-card {
+            background: rgba(0, 0, 0, 0.75);
+            border: 4px solid #fbbf24;
+            box-shadow: 0 20px 50px rgba(0, 0, 0, 0.8);
+        }
+
+        .message-label {
+            font-size: clamp(13px, 3.5vw, 17px);
+            font-weight: 800;
+            text-transform: uppercase;
+            letter-spacing: 0.12em;
+            margin-bottom: 8px;
+        }
+
+        body.state-safe .message-label { color: #a7f3d0; }
+        body.state-alert .message-label { color: #fde047; }
+
+        .message-text {
+            font-size: clamp(24px, 6.4vw, 48px);
+            font-weight: 900;
+            line-height: 1.25;
+            word-wrap: break-word;
+            text-shadow: 0 2px 10px rgba(0, 0, 0, 0.6);
+        }
+
+        .audio-indicator {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            margin-top: 16px;
+            padding: 8px 18px;
+            background: rgba(255, 255, 255, 0.25);
+            border-radius: 9999px;
+            font-size: 0.95rem;
+            font-weight: 800;
+        }
+
+        .bottom-bar {
+            width: 100%;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 4px;
+            font-size: 0.8rem;
+            opacity: 0.85;
+            font-family: 'JetBrains Mono', monospace;
+        }
+
+        /* Tap to Arm Banner */
+        #arm-banner {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(15, 23, 42, 0.97);
+            backdrop-filter: blur(20px);
+            color: white;
+            z-index: 9999;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            padding: 24px;
+            text-align: center;
+            cursor: pointer;
+            transition: opacity 0.3s ease, visibility 0.3s;
+        }
+
+        #arm-banner.dismissed {
+            opacity: 0;
+            visibility: hidden;
+            pointer-events: none;
+        }
+
+        .arm-btn {
+            background: linear-gradient(135deg, #f59e0b, #d97706);
+            color: #ffffff;
+            border: none;
+            padding: 22px 36px;
+            border-radius: 20px;
+            font-size: 1.35rem;
+            font-weight: 900;
+            box-shadow: 0 12px 30px rgba(245, 158, 11, 0.5);
+            margin: 20px 0;
+            cursor: pointer;
+            animation: pulse-arm-btn 1.6s infinite;
+        }
+
+        @keyframes pulse-arm-btn {
+            0%, 100% { transform: scale(1); }
+            50% { transform: scale(1.04); }
+        }
+
+        .iphone-warning {
+            background: rgba(239, 68, 68, 0.2);
+            border: 1px solid rgba(239, 68, 68, 0.6);
+            padding: 12px 18px;
+            border-radius: 12px;
+            font-size: 0.9rem;
+            max-width: 380px;
+            line-height: 1.4;
+            margin-top: 14px;
+            color: #fca5a5;
+        }
+    </style>
+</head>
+<body class="state-safe" id="body">
+
+    <!-- Mobile Audio Unlock Splash -->
+    <div id="arm-banner" onclick="armAudio()">
+        <div style="font-size: 72px; margin-bottom: 12px;">👷🔊</div>
+        <h1 style="font-size: 2.1rem; font-weight: 900; margin-bottom: 8px;">FORESITE WORKER HUD</h1>
+        <p style="font-size: 1.05rem; max-width: 380px; line-height: 1.4; opacity: 0.9;">
+            Tap below to enable sirens and spoken voice alerts on this phone.
+        </p>
+        <button class="arm-btn" onclick="armAudio()">🔊 TAP TO ARM AUDIO</button>
+        <div class="iphone-warning">
+            ⚠️ <b>iPhone Users:</b> Ensure your side Silent/Mute switch is <b>OFF</b> and volume is turned up to hear the alarm!
+        </div>
+    </div>
+
+    <!-- Hidden audio element for ElevenLabs TTS -->
+    <audio id="tts-audio" preload="auto" playsinline></audio>
+
+    <div id="app-container">
+        <!-- Top Bar -->
+        <div class="top-bar">
+            <div class="role-pill">
+                <span>👷</span>
+                <span>WORKER HUD</span>
+            </div>
+            <button class="test-audio-btn" onclick="testAudioSound(event)">🔊 TEST SOUND</button>
+        </div>
+
+        <!-- Main Center Area -->
+        <div class="main-content">
+            <div class="state-icon" id="state-icon">🛡️</div>
+            <h1 class="state-title" id="state-title">ALL CLEAR</h1>
+            
+            <div class="message-card">
+                <div class="message-label" id="message-label">SAFETY STATUS</div>
+                <div class="message-text" id="message-text">All clear. Normal site operations.</div>
+            </div>
+
+            <div class="audio-indicator" id="audio-badge" style="display: none;">
+                <span>🔊</span>
+                <span id="audio-status-text">AUDIO ACTIVE</span>
+            </div>
+        </div>
+
+        <!-- Bottom Bar -->
+        <div class="bottom-bar">
+            <div id="last-sync">CONNECTING...</div>
+            <div style="opacity: 0.6;">FORESITE CV COLLISION PREVENTION</div>
+        </div>
+    </div>
+
+    <script>
+        let lastSeenTimestamp = null;
+        let audioArmed = false;
+        let audioCtx = null;
+        const ttsAudio = document.getElementById('tts-audio');
+
+        function getAudioContext() {
+            if (!audioCtx) {
+                const AudioContext = window.AudioContext || window.webkitAudioContext;
+                audioCtx = new AudioContext();
+            }
+            return audioCtx;
+        }
+
+        // Test beep & unlock
+        function armAudio() {
+            try {
+                const ctx = getAudioContext();
+                if (ctx.state === 'suspended') {
+                    ctx.resume();
+                }
+
+                // Play loud confirmation chirp
+                playTestBeep(ctx);
+
+                // Unlock Speech Synthesis
+                if ('speechSynthesis' in window) {
+                    window.speechSynthesis.cancel();
+                    const utter = new SpeechSynthesisUtterance("Audio armed. Worker safety active.");
+                    utter.rate = 1.0;
+                    utter.volume = 1.0;
+                    window.speechSynthesis.speak(utter);
+                }
+
+                // Unlock <audio> tag
+                ttsAudio.src = "data:audio/wav;base64,UklGRigAAABXQVZFZm10IBIAAAABAAEARKwAAIhYAQACABAAAABkYXRhAgAAAAEA";
+                ttsAudio.play().then(() => ttsAudio.pause()).catch(() => {});
+
+                audioArmed = true;
+                document.getElementById('arm-banner').classList.add('dismissed');
+                document.getElementById('audio-badge').style.display = 'inline-flex';
+                document.getElementById('audio-status-text').textContent = 'AUDIO LIVE';
+            } catch (err) {
+                console.warn('Arm audio error:', err);
+                document.getElementById('arm-banner').classList.add('dismissed');
+            }
+        }
+
+        function playTestBeep(ctx) {
+            try {
+                const now = ctx.currentTime;
+                const osc = ctx.createOscillator();
+                const gain = ctx.createGain();
+                osc.type = 'sawtooth';
+                osc.frequency.setValueAtTime(880, now);
+                osc.frequency.linearRampToValueAtTime(1320, now + 0.15);
+                gain.gain.setValueAtTime(0.6, now);
+                gain.gain.exponentialRampToValueAtTime(0.001, now + 0.25);
+                osc.connect(gain);
+                gain.connect(ctx.destination);
+                osc.start(now);
+                osc.stop(now + 0.25);
+            } catch (e) {}
+        }
+
+        function testAudioSound(e) {
+            if (e) e.stopPropagation();
+            if (!audioArmed) armAudio();
+            playSynthesizedAlarmBeep().then(() => {
+                speakText("Test alert! Forklift approaching blind corner!");
+            });
+        }
+
+        // Step 2: Emergency Siren Beep via Web Audio API
+        function playSynthesizedAlarmBeep() {
+            return new Promise((resolve) => {
+                try {
+                    const ctx = getAudioContext();
+                    if (ctx.state === 'suspended') {
+                        ctx.resume();
+                    }
+
+                    const now = ctx.currentTime;
+                    // Dual-frequency urgent siren burst
+                    for (let burst = 0; burst < 3; burst++) {
+                        const tOffset = burst * 0.22;
+                        const osc = ctx.createOscillator();
+                        const gain = ctx.createGain();
+                        osc.type = 'sawtooth';
+                        osc.frequency.setValueAtTime(880, now + tOffset);
+                        osc.frequency.linearRampToValueAtTime(1320, now + tOffset + 0.15);
+                        gain.gain.setValueAtTime(0.7, now + tOffset);
+                        gain.gain.exponentialRampToValueAtTime(0.01, now + tOffset + 0.20);
+                        osc.connect(gain);
+                        gain.connect(ctx.destination);
+                        osc.start(now + tOffset);
+                        osc.stop(now + tOffset + 0.20);
+                    }
+                    setTimeout(resolve, 700);
+                } catch (e) {
+                    console.error('Alarm error:', e);
+                    resolve();
+                }
+            });
+        }
+
+        // Step 3: Voice Alert (Plays ElevenLabs if available, falls back to native SpeechSynthesis)
+        function speakText(text) {
+            if ('speechSynthesis' in window) {
+                window.speechSynthesis.cancel();
+                const utter = new SpeechSynthesisUtterance(text);
+                utter.rate = 1.05;
+                utter.pitch = 1.1;
+                utter.volume = 1.0;
+                window.speechSynthesis.speak(utter);
+            }
+        }
+
+        function playElevenLabsOrNative(message, timestamp) {
+            // Try fetching ElevenLabs audio
+            ttsAudio.src = `/audio/worker.mp3?t=${timestamp}`;
+            ttsAudio.load();
+            ttsAudio.play().then(() => {
+                document.getElementById('audio-status-text').textContent = 'PLAYING AI VOICE';
+            }).catch(() => {
+                // If audio element failed or key is absent, use phone's native speech synthesizer
+                speakText(message);
+            });
+            // Also invoke speech synthesis if ttsAudio doesn't start in 500ms
+            setTimeout(() => {
+                if (ttsAudio.paused) {
+                    speakText(message);
+                }
+            }, 500);
+        }
+
+        // Alert Trigger Handler
+        async function handleAlertTrigger(data) {
+            console.log('🚨 ALERT TRIGGERED:', data.worker_message);
+
+            // (1) Full screen Red ALERT state
+            document.getElementById('body').className = 'state-alert';
+            document.getElementById('state-icon').textContent = '⚠️';
+            document.getElementById('state-title').textContent = 'CRITICAL ALERT';
+            document.getElementById('message-label').textContent = 'IMMEDIATE WORKER HAZARD';
+            document.getElementById('message-text').textContent = data.worker_message;
+            document.getElementById('audio-badge').style.display = 'inline-flex';
+            document.getElementById('audio-status-text').textContent = 'SIREN ACTIVE';
+
+            // (2) Browser Web Audio API siren
+            await playSynthesizedAlarmBeep();
+
+            // (3) Spoken alert
+            playElevenLabsOrNative(data.worker_message, data.timestamp);
+        }
+
+        // Clear Handler
+        function handleAlertClear(data) {
+            document.getElementById('body').className = 'state-safe';
+            document.getElementById('state-icon').textContent = '🛡️';
+            document.getElementById('state-title').textContent = 'ALL CLEAR';
+            document.getElementById('message-label').textContent = 'SAFETY STATUS';
+            document.getElementById('message-text').textContent = data.worker_message || 'All clear. Site operational.';
+            document.getElementById('audio-status-text').textContent = 'MONITORING';
+            try {
+                ttsAudio.pause();
+                if ('speechSynthesis' in window) window.speechSynthesis.cancel();
+            } catch (e) {}
+        }
+
+        // Poll /status once per second
+        async function pollStatus() {
+            try {
+                const response = await fetch('/status');
+                if (!response.ok) throw new Error('Poll failed');
+                const data = await response.json();
+
+                const nowTime = new Date().toLocaleTimeString();
+                document.getElementById('last-sync').textContent = `LIVE SYNC: ${nowTime}`;
+
+                if (data.timestamp !== lastSeenTimestamp) {
+                    lastSeenTimestamp = data.timestamp;
+                    if (data.active) {
+                        handleAlertTrigger(data);
+                    } else {
+                        handleAlertClear(data);
+                    }
+                }
+            } catch (err) {
+                document.getElementById('last-sync').textContent = `RECONNECTING...`;
+            }
+        }
+
+        document.body.addEventListener('click', () => {
+            if (!audioArmed) armAudio();
+        });
+
+        pollStatus();
+        setInterval(pollStatus, 1000);
+    </script>
+</body>
+</html>
