@@ -117,6 +117,11 @@ def load_models():
     detector = create_detector(tracking_cfg)
 
     # 2. GRU Trajectory Model
+    # Alias trajectory_model in sys.modules so torch.load unpickler finds it
+    import model.trajectory_model as _tm
+    sys.modules["trajectory_model"] = _tm
+    torch.serialization.add_safe_globals([TrajectoryConfig])
+
     gru_model = None
     if CHECKPOINT_PATH.exists():
         try:
@@ -133,10 +138,9 @@ def load_models():
         gru_model = TrajectoryGRU(cfg).to(device)
         gru_model.eval()
 
-    # 3. Risk Engine
-    risk_engine = RiskEngine(RiskConfig(safe_distance=0.06, fps=30.0, risk_threshold=0.60))
-
-    # 4. Counterfactual Simulator
+    # 3. Risk Engine & Counterfactual Simulator
+    risk_cfg = RiskConfig(safe_distance=0.06, fps=30.0, risk_threshold=0.60)
+    risk_engine = RiskEngine(risk_cfg)
     cf_simulator = CounterfactualSimulator(risk_engine=risk_engine)
 
     return detector, gru_model, risk_engine, cf_simulator, device, tracking_cfg

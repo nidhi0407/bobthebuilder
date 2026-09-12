@@ -175,10 +175,15 @@ class CounterfactualSimulator:
     def __init__(
         self,
         risk_config: Optional[RiskConfig] = None,
+        risk_engine: Optional[RiskEngine] = None,
         candidates: Optional[List[InterventionCandidate]] = None,
     ):
-        self.risk_config = risk_config or RiskConfig()
-        self.risk_engine = RiskEngine(self.risk_config)
+        if risk_engine is not None:
+            self.risk_engine = risk_engine
+            self.risk_config = risk_engine.cfg
+        else:
+            self.risk_config = risk_config or RiskConfig()
+            self.risk_engine = RiskEngine(self.risk_config)
         self.candidates = candidates or DEFAULT_CANDIDATES
 
     def _simulate_candidate(
