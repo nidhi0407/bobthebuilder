@@ -1,3 +1,19 @@
+# Streamlit Dashboard & Web UI
+streamlit>=1.38.0
+
+# YOLOv8 Object Detection & ByteTrack Tracking
+ultralytics>=8.3.28
+lapx>=0.10.0
+
+# Computer Vision & Array Manipulation
+opencv-python>=4.10.0.84
+numpy>=1.24.0
+
+# PyTorch Trajectory Prediction Engine
+torch>=2.0.0
+
+# Testing
+pytest>=7.0.0
 # ForeSite AI — Person 1 (CV & Tracking) Requirements
 # Core lightweight perception dependencies (optimized for instant install & zero conflicts)
 opencv-python-headless>=4.8.0
