@@ -14,15 +14,18 @@ class TrackingConfig:
     # Model parameters
     model_name_or_path: str = "yolov8n.pt"  # Lightweight pretrained YOLO
     device: Optional[str] = None  # Auto-selects mps/cuda/cpu if None
-    conf_threshold: float = 0.35  # Detection confidence threshold
+    conf_threshold: float = 0.20  # Detection confidence threshold (optimized for warehouse CCTV)
     iou_threshold: float = 0.45   # NMS IoU threshold
 
     # Class mappings (Source detector label -> Canonical ForeSite label)
     class_mapping: Dict[str, str] = field(default_factory=lambda: {
         "person": "worker",
         "forklift": "forklift",
+        "car": "forklift",
         "truck": "truck",
         "bus": "truck",
+        "train": "forklift",
+        "boat": "forklift",
         "excavator": "excavator",
         "loader": "loader",
     })
@@ -38,9 +41,9 @@ class TrackingConfig:
 
     # ByteTrack Tracker Settings
     tracker_type: str = "bytetrack.yaml"
-    track_thresh: float = 0.35
+    track_thresh: float = 0.20
     match_thresh: float = 0.40
-    track_buffer: int = 30  # Frame buffer inside tracker
+    track_buffer: int = 60  # Frame buffer inside tracker (persists across warehouse occlusions)
 
     # Trajectory Buffer & Timeouts
     history_length: int = 8        # Last N observations handed to Person 2 (must match GRU model's obs_len=8)

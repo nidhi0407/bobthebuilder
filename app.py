@@ -113,7 +113,7 @@ def load_models():
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     # 1. Perception Detector
-    tracking_cfg = TrackingConfig(conf_threshold=0.25)
+    tracking_cfg = TrackingConfig(conf_threshold=0.20, track_buffer=60)
     detector = create_detector(tracking_cfg)
 
     # 2. GRU Trajectory Model
@@ -139,7 +139,7 @@ def load_models():
         gru_model.eval()
 
     # 3. Risk Engine & Counterfactual Simulator
-    risk_cfg = RiskConfig(safe_distance=0.06, fps=30.0, risk_threshold=0.60)
+    risk_cfg = RiskConfig(safe_distance=0.08, fps=30.0, risk_threshold=0.50)
     risk_engine = RiskEngine(risk_cfg)
     cf_simulator = CounterfactualSimulator(risk_engine=risk_engine)
 
@@ -225,6 +225,10 @@ def process_pipeline_frame(
     h, w = frame.shape[:2]
     annotated = frame.copy()
     new_logs = []
+
+    # Sync runtime threshold parameters
+    risk_engine.cfg.risk_threshold = risk_threshold
+    cf_simulator.risk_config.risk_threshold = risk_threshold
 
     # 1. Detection & Tracking (Stage 1 & 2)
     detections = detector.detect(frame)
@@ -413,6 +417,27 @@ def main():
         unsafe_allow_html=True,
     )
     st.caption("Predictive Safety & Prescriptive Collision Prevention Platform")
+
+    # Sidebar Controls
+    with st.sidebar:
+        st.header("⚙️ Safety & Vision Controls")
+        conf_thresh = st.slider("Detection Confidence (YOLOv8)", 0.10, 0.60, 0.20, 0.05, help="Lower value detects vehicles/forklifts more reliably in CCTV surveillance footage")
+        detector.config.conf_threshold = conf_thresh
+
+        risk_thresh = st.slider("Risk Alert Sensitivity", 0.20, 0.90, st.session_state.risk_threshold, 0.05, help="Trigger threshold for counterfactual prescriptive action")
+        st.session_state.risk_threshold = risk_thresh
+
+        safe_dist = st.slider("Safe Distance Margin (CPA)", 0.04, 0.20, 0.08, 0.01, help="Spatial safety clearance distance")
+        risk_engine.cfg.safe_distance = safe_dist
+        cf_simulator.risk_config.safe_distance = safe_dist
+
+        st.markdown("---")
+        st.markdown("**Active Perception Engine**:")
+        detector_type_name = type(detector).__name__
+        if "Ultralytics" in detector_type_name:
+            st.success(f"🟢 Neural Vision: {detector_type_name} (yolov8n.pt)")
+        else:
+            st.warning(f"🟡 Detector: {detector_type_name}")
 
     col_main, col_log = st.columns([0.65, 0.35])
 

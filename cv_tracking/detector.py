@@ -299,16 +299,15 @@ def create_detector(config: Optional[TrackingConfig] = None, force_synthetic: bo
         logger.info("Using SyntheticFallbackDetector as requested.")
         return SyntheticFallbackDetector(cfg)
 
-    # 1. Try Ultralytics YOLO if available and weights exist
+    # 1. Try Ultralytics YOLO (PyTorch backend, auto-downloads weights if needed)
     try:
-        import ultralytics
-        if os.path.exists(cfg.model_name_or_path):
-            logger.info(f"Loading Ultralytics YOLO from {cfg.model_name_or_path}")
-            return UltralyticsYOLODetector(cfg.model_name_or_path, cfg)
+        from ultralytics import YOLO
+        logger.info(f"Loading Ultralytics YOLO detector with model: {cfg.model_name_or_path}")
+        return UltralyticsYOLODetector(cfg.model_name_or_path, cfg)
     except ImportError:
-        pass
+        logger.info("Ultralytics not installed; checking ONNX / Synthetic fallbacks.")
     except Exception as e:
-        logger.warning(f"Ultralytics YOLO unavailable: {e}")
+        logger.warning(f"Ultralytics YOLO initialization failed: {e}")
 
     # 2. Try ONNX model if specified or found
     onnx_candidate = cfg.model_name_or_path.replace(".pt", ".onnx")
@@ -316,6 +315,6 @@ def create_detector(config: Optional[TrackingConfig] = None, force_synthetic: bo
         logger.info(f"Loading ONNX YOLO model from {onnx_candidate}")
         return ONNXYOLODetector(onnx_candidate, cfg)
 
-    # 3. Fallback to synthetic detector for testing and resilient demo execution
+    # 3. Fallback to synthetic detector for testing and offline demo execution
     logger.info("Using SyntheticFallbackDetector (deterministic demo & test mode).")
     return SyntheticFallbackDetector(cfg)
