@@ -76,19 +76,30 @@ class ByteTracker:
 
     def __init__(
         self,
+        config: Optional[TrackingConfig] = None,
         track_thresh: float = 0.35,
         match_thresh: float = 0.40,
         max_time_lost: int = 30
     ):
         """
         Args:
+            config: Optional TrackingConfig object.
             track_thresh: Threshold separating high-conf and low-conf detections.
             match_thresh: IoU threshold for associating detections to tracks.
             max_time_lost: Maximum frames a lost track is kept before being purged.
         """
-        self.track_thresh = track_thresh
-        self.match_thresh = match_thresh
-        self.max_time_lost = max_time_lost
+        if isinstance(config, TrackingConfig):
+            self.track_thresh = config.track_thresh
+            self.match_thresh = config.match_thresh
+            self.max_time_lost = config.track_buffer
+        elif isinstance(config, (int, float)):
+            self.track_thresh = float(config)
+            self.match_thresh = match_thresh
+            self.max_time_lost = max_time_lost
+        else:
+            self.track_thresh = track_thresh
+            self.match_thresh = match_thresh
+            self.max_time_lost = max_time_lost
 
         self.tracked_stracks: List[STrack] = []
         self.lost_stracks: List[STrack] = []
@@ -104,10 +115,12 @@ class ByteTracker:
     def update(
         self,
         detections: List[Dict[str, Any]],
-        frame_width: int,
-        frame_height: int,
-        timestamp: float,
-        anchor: str = "bottom-center"
+        frame_width: Optional[int] = None,
+        frame_height: Optional[int] = None,
+        timestamp: float = 0.0,
+        anchor: str = "bottom-center",
+        frame_id: Optional[int] = None,
+        frame_shape: Optional[Tuple[int, int]] = None,
     ) -> List[Track]:
         """
         Update tracks with current frame detections.
@@ -118,11 +131,23 @@ class ByteTracker:
             frame_height: Height of current frame.
             timestamp: Current frame timestamp in seconds.
             anchor: Position extraction anchor ("bottom-center" or "center").
+            frame_id: Optional frame index.
+            frame_shape: Optional (height, width) tuple.
 
         Returns:
             List of Track schema objects for currently active tracks.
         """
-        self.frame_id += 1
+        if frame_shape is not None:
+            frame_height, frame_width = frame_shape
+        if frame_width is None:
+            frame_width = 1920
+        if frame_height is None:
+            frame_height = 1080
+
+        if frame_id is not None:
+            self.frame_id = frame_id
+        else:
+            self.frame_id += 1
 
         # Separate detections into high confidence (D_high) and low confidence (D_low)
         d_high = []

@@ -229,7 +229,14 @@ def process_pipeline_frame(
     # 1. Detection & Tracking (Stage 1 & 2)
     detections = detector.detect(frame)
     tracker: ByteTracker = st.session_state.tracker
-    tracked_objects = tracker.update(detections, frame_id=frame_idx, frame_shape=(h, w))
+    timestamp = frame_idx / fps if fps > 0 else 0.0
+    tracked_objects = tracker.update(
+        detections,
+        frame_width=w,
+        frame_height=h,
+        timestamp=timestamp,
+        frame_id=frame_idx,
+    )
 
     active_tracks: Dict[int, Tuple[str, Tuple[float, float], Tuple[int, int, int, int]]] = {}
     class_map: Dict[int, str] = {}
